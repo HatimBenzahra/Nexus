@@ -11,6 +11,7 @@ import { conversationRoutes } from "./routes/conversations.js";
 import { subagentRoutes } from "./routes/subagents.js";
 import { chatRoutes } from "./routes/chat.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { agentConfigRoutes } from "./routes/agent-configs.js";
 import { setupWebSocket } from "./websocket/ws-server.js";
 import { getDb, runMigrations } from "./db/index.js";
 
@@ -33,6 +34,7 @@ app.use("/api/conversations", conversationRoutes);
 app.use("/api/subagents", subagentRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/sessions", sessionRoutes);
+app.use("/api/agent-configs", agentConfigRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

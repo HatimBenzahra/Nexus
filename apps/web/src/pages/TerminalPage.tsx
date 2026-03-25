@@ -29,6 +29,8 @@ export function TerminalPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const [activeModel, setActiveModel] = useState<AgentType>("claude");
   const [waiting, setWaiting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sessions, setSessions] = useState<Array<{id: string; title: string; status: string; created_at: string}>>([]);
   const inputBuffer = useRef("");
   const activeModelRef = useRef<AgentType>("claude");
   const waitingRef = useRef(false);
@@ -66,6 +68,35 @@ export function TerminalPage() {
     term.write(`\r\n${c}${activeModelRef.current}${RESET} ${DIM}›${RESET} `);
     inputBuffer.current = "";
   }, []);
+
+  const fetchSessions = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "list-sessions" }));
+    }
+  }, []);
+
+  const loadSession = useCallback((id: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === 1) {
+      xtermRef.current?.clear();
+      xtermRef.current?.write(`${BOLD}Nexus${RESET} ${DIM}— loading session...${RESET}\r\n`);
+      sessionIdRef.current = id;
+      ws.send(JSON.stringify({ type: "load-session", sessionId: id }));
+    }
+  }, []);
+
+  const newSession = useCallback(() => {
+    sessionIdRef.current = null;
+    xtermRef.current?.clear();
+    xtermRef.current?.write(`${BOLD}Nexus${RESET} ${DIM}— new session${RESET}\r\n`);
+    showPrompt();
+  }, [showPrompt]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+    return () => clearTimeout(timer);
+  }, [sidebarOpen]);
 
   useEffect(() => {
     if (!termRef.current) return;
@@ -115,6 +146,7 @@ export function TerminalPage() {
       ws.onopen = () => {
         reconnectAttempt = 0;
         showPrompt();
+        fetchSessions();
       };
 
       ws.onmessage = (event) => {
@@ -127,7 +159,7 @@ export function TerminalPage() {
           title?: string;
           session?: unknown;
           messages?: Array<{ role: string; content: string }>;
-          sessions?: unknown[];
+          sessions?: Array<{id: string; title: string; status: string; created_at: string}>;
         };
         try {
           msg = JSON.parse(event.data);
@@ -159,6 +191,7 @@ export function TerminalPage() {
             break;
           case "session-created":
             if (msg.sessionId) sessionIdRef.current = msg.sessionId;
+            fetchSessions();
             break;
           case "session-loaded":
             if (msg.messages) {
@@ -173,7 +206,9 @@ export function TerminalPage() {
             }
             break;
           case "sessions-list":
-            console.log("[nexus] sessions:", msg.sessions);
+            if (msg.sessions && Array.isArray(msg.sessions)) {
+              setSessions(msg.sessions);
+            }
             break;
         }
       };
@@ -244,7 +279,7 @@ export function TerminalPage() {
       wsRef.current = null;
       term.dispose();
     };
-  }, [showPrompt]);
+  }, [showPrompt, fetchSessions]);
 
   const switchModel = useCallback((model: AgentType) => {
     if (waitingRef.current) return;
@@ -262,6 +297,14 @@ export function TerminalPage() {
     <div className="flex h-screen flex-col bg-[#0a0a0a]">
       {/* Top bar */}
       <div className="flex items-center gap-1 border-b border-zinc-800 bg-zinc-900/80 px-3 py-1.5">
+        <button
+          onClick={() => setSidebarOpen(prev => !prev)}
+          className="mr-1 flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M1 3h12M1 7h12M1 11h12" />
+          </svg>
+        </button>
         <div className="mr-2 flex h-6 w-6 items-center justify-center rounded bg-purple-600 text-xs font-bold text-white">
           N
         </div>
@@ -286,8 +329,35 @@ export function TerminalPage() {
         <div className="ml-auto" />
       </div>
 
-      {/* Terminal */}
-      <div ref={termRef} className="flex-1 overflow-hidden" />
+      {/* Terminal + Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        {sidebarOpen && (
+          <div className="flex w-60 flex-col border-r border-zinc-800 bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Sessions</span>
+              <button onClick={newSession} className="rounded px-2 py-0.5 text-xs text-purple-400 hover:bg-zinc-800">+ New</button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {sessions.length === 0 && <div className="px-3 py-4 text-xs text-zinc-600">No sessions yet</div>}
+              {sessions.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => loadSession(s.id)}
+                  className={`w-full px-3 py-2 text-left transition-colors ${
+                    sessionIdRef.current === s.id
+                      ? "bg-zinc-800 border-l-2 border-purple-500"
+                      : "hover:bg-zinc-800/50 border-l-2 border-transparent"
+                  }`}
+                >
+                  <div className="truncate text-sm text-zinc-300">{s.title || "Untitled"}</div>
+                  <div className="mt-0.5 text-xs text-zinc-600">{new Date(s.created_at).toLocaleDateString()}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div ref={termRef} className="flex-1 overflow-hidden" />
+      </div>
     </div>
   );
 }
