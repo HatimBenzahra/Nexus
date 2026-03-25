@@ -1,0 +1,23 @@
+{
+  "name": "nexus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent IDE — Manage Claude Code, Codex, and Gemini from a unified web UI",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/server & npm run dev --workspace=apps/web",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:server": "npm run dev --workspace=apps/server",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

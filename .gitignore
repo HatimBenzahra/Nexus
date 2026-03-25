@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.nexus-worktrees/
+.nexus-vault/
+.omc/
+test-results/
+*.log
+.DS_Store

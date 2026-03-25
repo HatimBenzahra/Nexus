@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
+  overflow: hidden;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* xterm fills the space */
+.xterm {
+  padding: 4px 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
