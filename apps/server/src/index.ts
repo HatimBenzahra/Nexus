@@ -12,6 +12,9 @@ import { subagentRoutes } from "./routes/subagents.js";
 import { chatRoutes } from "./routes/chat.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { agentConfigRoutes } from "./routes/agent-configs.js";
+import { taskRoutes } from "./routes/tasks.js";
+import { canvasRoutes } from "./routes/canvas.js";
+import { taskExecutionRoutes } from "./routes/task-execution.js";
 import { setupWebSocket } from "./websocket/ws-server.js";
 import { getDb, runMigrations } from "./db/index.js";
 
@@ -35,6 +38,9 @@ app.use("/api/subagents", subagentRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/sessions", sessionRoutes);
 app.use("/api/agent-configs", agentConfigRoutes);
+app.use("/api/tasks", taskRoutes);
+app.use("/api/canvas", canvasRoutes);
+app.use("/api/task-execution", taskExecutionRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {

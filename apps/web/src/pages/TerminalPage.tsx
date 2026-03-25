@@ -160,6 +160,10 @@ export function TerminalPage() {
           session?: unknown;
           messages?: Array<{ role: string; content: string }>;
           sessions?: Array<{id: string; title: string; status: string; created_at: string}>;
+          task?: { id?: string; title?: string; status?: string; priority?: number };
+          tasks?: Array<{ id?: string; title?: string; status?: string }>;
+          subtasks?: unknown[];
+          dependencies?: unknown[];
         };
         try {
           msg = JSON.parse(event.data);
@@ -210,6 +214,27 @@ export function TerminalPage() {
               setSessions(msg.sessions);
             }
             break;
+          case "task-created":
+            term.write(`\r\n${DIM}✓ Task created:${RESET} ${msg.task?.title} ${DIM}(${msg.task?.id?.slice(0,8)})${RESET}`);
+            showPrompt();
+            break;
+          case "task-list":
+            term.write(`\r\n${BOLD}Tasks${RESET}\r\n`);
+            msg.tasks?.forEach(t => {
+              const statusIcon = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '◎' : '○';
+              term.write(`  ${statusIcon} ${t.title} ${DIM}[${t.status}]${RESET}\r\n`);
+            });
+            showPrompt();
+            break;
+          case "task-detail":
+            term.write(`\r\n${BOLD}${msg.task?.title}${RESET}\r\n`);
+            term.write(`${DIM}Status: ${msg.task?.status} | Priority: ${msg.task?.priority}${RESET}\r\n`);
+            showPrompt();
+            break;
+          case "task-error":
+            term.write(`\r\n\x1b[31m${msg.data}\x1b[0m`);
+            showPrompt();
+            break;
         }
       };
 
@@ -244,15 +269,19 @@ export function TerminalPage() {
         const msg = inputBuffer.current.trim();
         term.write("\r\n");
         if (msg) {
-          setWaiting(true);
-          waitingRef.current = true;
-          startSpinner();
-          wsRef.current?.send(JSON.stringify({
-            type: "chat",
-            model: activeModelRef.current,
-            message: msg,
-            ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
-          }));
+          if (msg.startsWith("/")) {
+            wsRef.current?.send(JSON.stringify({ type: "slash-command", slashInput: msg }));
+          } else {
+            setWaiting(true);
+            waitingRef.current = true;
+            startSpinner();
+            wsRef.current?.send(JSON.stringify({
+              type: "chat",
+              model: activeModelRef.current,
+              message: msg,
+              ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
+            }));
+          }
         } else {
           showPrompt();
         }
@@ -326,6 +355,7 @@ export function TerminalPage() {
           </button>
         ))}
 
+        <a href="/canvas" className="ml-4 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300">Canvas</a>
         <div className="ml-auto" />
       </div>
 

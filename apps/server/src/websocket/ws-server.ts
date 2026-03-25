@@ -3,12 +3,14 @@ import { runProvider, type ProviderRunHandle } from "../providers/provider-runne
 import { homedir } from "os";
 import { basename } from "path";
 import type { AgentType } from "@nexus/shared";
-import { workspaceRepo, sessionRepo, messageRepo, agentRepo } from "../db/repositories/index.js";
+import { workspaceRepo, sessionRepo, messageRepo, agentRepo, taskRepo } from "../db/repositories/index.js";
 import { getDb } from "../db/connection.js";
 import { buildContext, extractAndSaveMemories, decayMemories } from "../orchestrator/index.js";
+import { parseSlashCommand } from "../services/slash-commands.js";
+import { executeTask, cancelTask } from "../services/task-executor.js";
 
 interface WsMsg {
-  type: "chat" | "stop" | "load-session" | "list-sessions" | "create-agent" | "list-agents";
+  type: "chat" | "stop" | "load-session" | "list-sessions" | "create-agent" | "list-agents" | "slash-command" | "execute-task" | "cancel-task";
   model?: AgentType;
   message?: string;
   cwd?: string;
@@ -17,6 +19,8 @@ interface WsMsg {
   agentRole?: string;
   agentProvider?: string;
   agentSystemPrompt?: string;
+  slashInput?: string;
+  taskId?: string;
 }
 
 function getOrCreateWorkspace(cwd: string) {
@@ -204,6 +208,144 @@ export function setupWebSocket(wss: WebSocketServer) {
             const agents = agentRepo.findByWorkspace(workspace.id).filter(a => a.status !== "archived");
             if (ws.readyState === 1) {
               ws.send(JSON.stringify({ type: "agents-list", agents }));
+            }
+            break;
+          }
+
+          case "slash-command": {
+            const parsed = parseSlashCommand(msg.slashInput ?? "");
+            if (!parsed) {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: "task-error", data: `Unknown command: ${msg.slashInput}` }));
+              }
+              break;
+            }
+            if (msg.cwd) cwd = msg.cwd;
+            const slashWorkspace = getOrCreateWorkspace(cwd);
+
+            switch (parsed.command) {
+              case "tasks": {
+                const filters: { status?: string; assigned_to?: string } = {};
+                if (parsed.args["status"]) filters.status = parsed.args["status"];
+                if (parsed.args["assign"]) filters.assigned_to = parsed.args["assign"];
+                const tasks = taskRepo.findByWorkspace(slashWorkspace.id, filters);
+                if (ws.readyState === 1) {
+                  ws.send(JSON.stringify({ type: "task-list", tasks }));
+                }
+                break;
+              }
+              case "task": {
+                if (parsed.action === "create") {
+                  const title = parsed.positional;
+                  if (!title) {
+                    if (ws.readyState === 1) {
+                      ws.send(JSON.stringify({ type: "task-error", data: "Task title is required" }));
+                    }
+                    break;
+                  }
+                  // Find or create system agent for created_by
+                  const existingAgents = agentRepo.findByWorkspace(slashWorkspace.id);
+                  let systemAgent = existingAgents.find(a => a.name === "system" && a.role === "system");
+                  if (!systemAgent) {
+                    systemAgent = agentRepo.create({
+                      workspace_id: slashWorkspace.id,
+                      name: "system",
+                      role: "system",
+                      provider: "system",
+                    });
+                  }
+                  const priority = parsed.args["priority"] ? parseInt(parsed.args["priority"], 10) : undefined;
+                  const task = taskRepo.create({
+                    workspace_id: slashWorkspace.id,
+                    title,
+                    created_by: systemAgent.id,
+                    assigned_to: parsed.args["assign"],
+                    priority,
+                  });
+                  if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: "task-created", task }));
+                  }
+                } else if (parsed.action === "status") {
+                  const taskId = parsed.positional;
+                  if (!taskId) {
+                    if (ws.readyState === 1) {
+                      ws.send(JSON.stringify({ type: "task-error", data: "Task id is required" }));
+                    }
+                    break;
+                  }
+                  const task = taskRepo.findById(taskId);
+                  if (!task) {
+                    if (ws.readyState === 1) {
+                      ws.send(JSON.stringify({ type: "task-error", data: `Task not found: ${taskId}` }));
+                    }
+                    break;
+                  }
+                  const subtasks = taskRepo.findChildren(task.id);
+                  const dependencies = taskRepo.getDependencies(task.id);
+                  if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: "task-detail", task, subtasks, dependencies }));
+                  }
+                } else {
+                  if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: "task-error", data: `Unknown task action: ${parsed.action}` }));
+                  }
+                }
+                break;
+              }
+              default: {
+                if (ws.readyState === 1) {
+                  ws.send(JSON.stringify({ type: "task-error", data: `Unknown command: /${parsed.command}` }));
+                }
+              }
+            }
+            break;
+          }
+
+          case "execute-task": {
+            if (!msg.taskId) {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: "error", data: "taskId is required" }));
+              }
+              break;
+            }
+            try {
+              const execution = executeTask(msg.taskId, {
+                cwd,
+                onOutput: (chunk) => {
+                  if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: "task-output", taskId: msg.taskId, data: chunk }));
+                  }
+                },
+                onComplete: (result, success) => {
+                  if (ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: "task-execution-done", taskId: msg.taskId, success, result: result.slice(0, 500) }));
+                  }
+                },
+              });
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: "task-execution-started", taskId: msg.taskId, sessionId: execution.sessionId }));
+              }
+            } catch (err) {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: "error", data: (err as Error).message }));
+              }
+            }
+            break;
+          }
+
+          case "cancel-task": {
+            if (!msg.taskId) {
+              if (ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: "error", data: "taskId is required" }));
+              }
+              break;
+            }
+            const cancelled = cancelTask(msg.taskId);
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify(cancelled
+                ? { type: "task-execution-cancelled", taskId: msg.taskId }
+                : { type: "error", taskId: msg.taskId }
+              ));
             }
             break;
           }
