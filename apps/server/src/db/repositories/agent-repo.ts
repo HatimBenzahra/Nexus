@@ -9,6 +9,7 @@ export interface Agent {
   system_prompt: string | null;
   parent_agent_id: string | null;
   color: string | null;
+  config_json: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -23,13 +24,14 @@ export const agentRepo = {
     system_prompt?: string;
     parent_agent_id?: string;
     color?: string;
+    config_json?: string;
   }): Agent {
     const db = getDb();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO agents (id, workspace_id, name, role, provider, system_prompt, parent_agent_id, color, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`
+      `INSERT INTO agents (id, workspace_id, name, role, provider, system_prompt, parent_agent_id, color, config_json, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`
     ).run(
       id,
       data.workspace_id,
@@ -39,6 +41,7 @@ export const agentRepo = {
       data.system_prompt ?? null,
       data.parent_agent_id ?? null,
       data.color ?? null,
+      data.config_json ?? null,
       now,
       now
     );
@@ -63,7 +66,7 @@ export const agentRepo = {
   update(id: string, data: Partial<Agent>): Agent {
     const db = getDb();
     const now = new Date().toISOString();
-    const allowed: (keyof Agent)[] = ['name', 'role', 'provider', 'system_prompt', 'parent_agent_id', 'color', 'status'];
+    const allowed: (keyof Agent)[] = ['name', 'role', 'provider', 'system_prompt', 'parent_agent_id', 'color', 'config_json', 'status'];
     const fields: string[] = [];
     const values: unknown[] = [];
     for (const key of allowed) {

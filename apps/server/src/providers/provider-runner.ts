@@ -2,13 +2,14 @@ import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, type ChildProcess } from "child_process";
-import type { AgentType } from "@nexus/shared";
+import type { AgentType, ProviderSettings, ClaudeSettings, CodexSettings, GeminiSettings } from "@nexus/shared";
 import { resolveCommand } from "../utils/resolve-command.js";
 
 export interface ProviderRunOptions {
   provider: AgentType;
   prompt: string;
   cwd: string;
+  settings?: ProviderSettings;
   onOutput: (chunk: string) => void;
   onExit: (exitCode: number) => void;
 }
@@ -23,21 +24,48 @@ const COMMANDS: Record<AgentType, string> = {
   gemini: resolveCommand("gemini"),
 };
 
-function buildArgs(provider: AgentType, prompt: string, cwd: string, outputFile?: string): string[] {
+function buildArgs(provider: AgentType, prompt: string, cwd: string, outputFile?: string, settings?: ProviderSettings): string[] {
   switch (provider) {
-    case "claude":
-      return ["-p", "--output-format", "text", "--no-session-persistence", prompt];
-    case "codex":
-      return [
-        "exec",
-        "--skip-git-repo-check",
-        "--full-auto",
-        "-C", cwd,
-        ...(outputFile ? ["-o", outputFile] : []),
-        prompt,
-      ];
-    case "gemini":
-      return ["-p", prompt];
+    case "claude": {
+      const s = (settings ?? {}) as ClaudeSettings;
+      const args: string[] = ["-p", "--output-format", s.outputFormat ?? "text"];
+      if (s.noSessionPersistence !== false) args.push("--no-session-persistence");
+      if (s.model) args.push("--model", s.model);
+      if (s.effort) args.push("--effort", s.effort);
+      if (s.maxTurns !== undefined) args.push("--max-turns", String(s.maxTurns));
+      if (s.maxBudgetUsd !== undefined) args.push("--max-budget-usd", String(s.maxBudgetUsd));
+      if (s.permissionMode) args.push("--permission-mode", s.permissionMode);
+      if (s.bare) args.push("--bare");
+      args.push(prompt);
+      return args;
+    }
+    case "codex": {
+      const s = (settings ?? {}) as CodexSettings;
+      const args: string[] = ["exec", "--skip-git-repo-check"];
+      if (s.fullAuto !== false) args.push("--full-auto");
+      if (s.approvalMode) args.push("--ask-for-approval", s.approvalMode);
+      if (s.sandbox) args.push("--sandbox", s.sandbox);
+      if (s.model) args.push("--model", s.model);
+      if (s.reasoningEffort) args.push("--config", `model_reasoning_effort=${s.reasoningEffort}`);
+      if (s.quiet) args.push("--quiet");
+      if (s.json) args.push("--json");
+      args.push("-C", cwd);
+      if (outputFile) args.push("-o", outputFile);
+      args.push(prompt);
+      return args;
+    }
+    case "gemini": {
+      const s = (settings ?? {}) as GeminiSettings;
+      const args: string[] = ["-p"];
+      if (s.model) args.push("--model", s.model);
+      if (s.temperature !== undefined) args.push("--temperature", String(s.temperature));
+      if (s.approvalMode) args.push("--approval-mode", s.approvalMode);
+      if (s.sandboxed) args.push("--sandbox");
+      if (s.outputFormat) args.push("--output-format", s.outputFormat);
+      if (s.yolo) args.push("--yolo");
+      args.push(prompt);
+      return args;
+    }
   }
 }
 
@@ -48,7 +76,7 @@ export function runProvider(options: ProviderRunOptions): ProviderRunHandle {
       : undefined;
 
   const cmd = COMMANDS[options.provider];
-  const args = buildArgs(options.provider, options.prompt, options.cwd, outputFile);
+  const args = buildArgs(options.provider, options.prompt, options.cwd, outputFile, options.settings);
 
   const proc: ChildProcess = spawn(cmd, args, {
     cwd: options.cwd,

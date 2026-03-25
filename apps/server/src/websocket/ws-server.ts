@@ -2,7 +2,7 @@ import type { WebSocketServer } from "ws";
 import { runProvider, type ProviderRunHandle } from "../providers/provider-runner.js";
 import { homedir } from "os";
 import { basename } from "path";
-import type { AgentType } from "@nexus/shared";
+import type { AgentType, ProviderSettings } from "@nexus/shared";
 import { workspaceRepo, sessionRepo, messageRepo, agentRepo, taskRepo } from "../db/repositories/index.js";
 import { getDb } from "../db/connection.js";
 import { buildContext, extractAndSaveMemories, decayMemories } from "../orchestrator/index.js";
@@ -10,7 +10,7 @@ import { parseSlashCommand } from "../services/slash-commands.js";
 import { executeTask, cancelTask } from "../services/task-executor.js";
 
 interface WsMsg {
-  type: "chat" | "stop" | "load-session" | "list-sessions" | "create-agent" | "list-agents" | "slash-command" | "execute-task" | "cancel-task";
+  type: "chat" | "stop" | "load-session" | "list-sessions" | "create-agent" | "list-agents" | "slash-command" | "execute-task" | "cancel-task" | "get-model-settings" | "update-model-settings";
   model?: AgentType;
   message?: string;
   cwd?: string;
@@ -21,6 +21,7 @@ interface WsMsg {
   agentSystemPrompt?: string;
   slashInput?: string;
   taskId?: string;
+  settings?: unknown;
 }
 
 function getOrCreateWorkspace(cwd: string) {
@@ -85,6 +86,10 @@ export function setupWebSocket(wss: WebSocketServer) {
             const workspace = getOrCreateWorkspace(cwd);
             const agents = agentRepo.findByWorkspace(workspace.id);
             const matchingAgent = agents.find(a => a.provider === msg.model && a.status !== 'archived');
+            let settings: ProviderSettings | undefined;
+            if (matchingAgent?.config_json) {
+              try { settings = JSON.parse(matchingAgent.config_json); } catch {}
+            }
             if (matchingAgent) {
               const ctx = buildContext({
                 agent_id: matchingAgent.id,
@@ -101,6 +106,7 @@ export function setupWebSocket(wss: WebSocketServer) {
               provider: msg.model,
               prompt: finalPrompt,
               cwd,
+              settings,
               onOutput: (chunk) => {
                 fullResponse += chunk;
                 if (ws.readyState === 1) {
@@ -346,6 +352,38 @@ export function setupWebSocket(wss: WebSocketServer) {
                 ? { type: "task-execution-cancelled", taskId: msg.taskId }
                 : { type: "error", taskId: msg.taskId }
               ));
+            }
+            break;
+          }
+
+          case "get-model-settings": {
+            if (!msg.model) break;
+            if (msg.cwd) cwd = msg.cwd;
+            const settingsWorkspace = getOrCreateWorkspace(cwd);
+            const settingsAgents = agentRepo.findByWorkspace(settingsWorkspace.id);
+            const settingsAgent = settingsAgents.find(a => a.provider === msg.model && a.status !== 'archived');
+            let modelSettings: ProviderSettings | undefined;
+            if (settingsAgent?.config_json) {
+              try { modelSettings = JSON.parse(settingsAgent.config_json); } catch {}
+            }
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: "model-settings", model: msg.model, settings: modelSettings }));
+            }
+            break;
+          }
+
+          case "update-model-settings": {
+            if (!msg.model) break;
+            if (msg.cwd) cwd = msg.cwd;
+            const updateWorkspace = getOrCreateWorkspace(cwd);
+            const updateAgents = agentRepo.findByWorkspace(updateWorkspace.id);
+            const updateAgent = updateAgents.find(a => a.provider === msg.model && a.status !== 'archived');
+            if (updateAgent) {
+              const config_json = JSON.stringify(msg.settings ?? {});
+              agentRepo.update(updateAgent.id, { config_json });
+            }
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: "model-settings-updated" }));
             }
             break;
           }

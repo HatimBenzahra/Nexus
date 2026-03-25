@@ -115,3 +115,37 @@ export interface DiffEntry {
   patch: string;
 }
 
+export interface ClaudeSettings {
+  model?: string;
+  effort?: "low" | "medium" | "high" | "max";
+  systemPrompt?: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  outputFormat?: "text" | "json" | "stream-json";
+  permissionMode?: "default" | "plan" | "auto" | "bypassPermissions";
+  bare?: boolean;
+  noSessionPersistence?: boolean;
+}
+
+export interface CodexSettings {
+  model?: string;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  approvalMode?: "untrusted" | "on-request" | "never";
+  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  fullAuto?: boolean;
+  json?: boolean;
+  quiet?: boolean;
+  provider?: string;
+}
+
+export interface GeminiSettings {
+  model?: string;
+  temperature?: number;
+  approvalMode?: "default" | "auto_edit" | "yolo" | "plan";
+  sandboxed?: boolean;
+  outputFormat?: "text" | "json";
+  yolo?: boolean;
+}
+
+export type ProviderSettings = ClaudeSettings | CodexSettings | GeminiSettings;
+
