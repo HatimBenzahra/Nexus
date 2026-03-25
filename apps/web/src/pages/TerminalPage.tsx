@@ -32,9 +32,32 @@ export function TerminalPage() {
   const inputBuffer = useRef("");
   const activeModelRef = useRef<AgentType>("claude");
   const waitingRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
+
+  const spinnerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   activeModelRef.current = activeModel;
   waitingRef.current = waiting;
+
+  const stopSpinner = useCallback(() => {
+    if (spinnerRef.current) {
+      clearInterval(spinnerRef.current);
+      spinnerRef.current = null;
+      // Clear the spinner line
+      xtermRef.current?.write("\r\x1b[2K");
+    }
+  }, []);
+
+  const startSpinner = useCallback(() => {
+    stopSpinner();
+    const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let i = 0;
+    const c = modelColor(activeModelRef.current);
+    spinnerRef.current = setInterval(() => {
+      xtermRef.current?.write(`\r\x1b[2K${DIM}${c}${frames[i % frames.length]}${RESET} ${DIM}thinking...${RESET}`);
+      i++;
+    }, 80);
+  }, [stopSpinner]);
 
   const showPrompt = useCallback(() => {
     const term = xtermRef.current;
@@ -95,7 +118,17 @@ export function TerminalPage() {
       };
 
       ws.onmessage = (event) => {
-        let msg: { type: string; data?: string; code?: number };
+        let msg: {
+          type: string;
+          data?: string;
+          code?: number;
+          sessionId?: string;
+          messageId?: string;
+          title?: string;
+          session?: unknown;
+          messages?: Array<{ role: string; content: string }>;
+          sessions?: unknown[];
+        };
         try {
           msg = JSON.parse(event.data);
         } catch {
@@ -104,21 +137,43 @@ export function TerminalPage() {
         }
         switch (msg.type) {
           case "output":
+            stopSpinner();
             if (msg.data != null) term.write(msg.data);
             break;
           case "error":
             term.write(`\r\n\x1b[31m${msg.data ?? "Unknown error"}\x1b[0m`);
             break;
           case "done":
+            stopSpinner();
+            if (msg.sessionId) sessionIdRef.current = msg.sessionId;
             setWaiting(false);
             waitingRef.current = false;
             showPrompt();
             break;
           case "stopped":
+            stopSpinner();
             setWaiting(false);
             waitingRef.current = false;
             term.write(`\r\n${DIM}[cancelled]${RESET}`);
             showPrompt();
+            break;
+          case "session-created":
+            if (msg.sessionId) sessionIdRef.current = msg.sessionId;
+            break;
+          case "session-loaded":
+            if (msg.messages) {
+              for (const m of msg.messages) {
+                if (m.role === "user") {
+                  term.write(`\r\n${DIM}you: ${m.content}${RESET}\r\n`);
+                } else {
+                  term.write(`\r\n${m.content}\r\n`);
+                }
+              }
+              showPrompt();
+            }
+            break;
+          case "sessions-list":
+            console.log("[nexus] sessions:", msg.sessions);
             break;
         }
       };
@@ -144,6 +199,7 @@ export function TerminalPage() {
     term.onData((data) => {
       if (waitingRef.current) {
         if (data === "\x03") {
+          stopSpinner();
           wsRef.current?.send(JSON.stringify({ type: "stop" }));
         }
         return;
@@ -155,10 +211,12 @@ export function TerminalPage() {
         if (msg) {
           setWaiting(true);
           waitingRef.current = true;
+          startSpinner();
           wsRef.current?.send(JSON.stringify({
             type: "chat",
             model: activeModelRef.current,
             message: msg,
+            ...(sessionIdRef.current ? { sessionId: sessionIdRef.current } : {}),
           }));
         } else {
           showPrompt();
@@ -179,6 +237,7 @@ export function TerminalPage() {
 
     return () => {
       destroyed = true;
+      stopSpinner();
       if (reconnectTimer != null) clearTimeout(reconnectTimer);
       resizeObs.disconnect();
       wsRef.current?.close();
@@ -224,9 +283,7 @@ export function TerminalPage() {
           </button>
         ))}
 
-        <div className="ml-auto">
-          {waiting && <span className="text-xs text-purple-400 animate-pulse">thinking...</span>}
-        </div>
+        <div className="ml-auto" />
       </div>
 
       {/* Terminal */}

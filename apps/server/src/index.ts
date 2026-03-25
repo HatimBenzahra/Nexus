@@ -10,7 +10,13 @@ import { directoryRoutes } from "./routes/directories.js";
 import { conversationRoutes } from "./routes/conversations.js";
 import { subagentRoutes } from "./routes/subagents.js";
 import { chatRoutes } from "./routes/chat.js";
+import { sessionRoutes } from "./routes/sessions.js";
 import { setupWebSocket } from "./websocket/ws-server.js";
+import { getDb, runMigrations } from "./db/index.js";
+
+// Initialize database
+const db = getDb();
+runMigrations(db);
 
 const app = express();
 const server = createServer(app);
@@ -26,6 +32,7 @@ app.use("/api/directories", directoryRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/subagents", subagentRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/sessions", sessionRoutes);
 
 // Health check
 app.get("/api/health", (_req, res) => {
