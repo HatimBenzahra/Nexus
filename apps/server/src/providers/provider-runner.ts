@@ -56,14 +56,15 @@ function buildArgs(provider: AgentType, prompt: string, cwd: string, outputFile?
     }
     case "gemini": {
       const s = (settings ?? {}) as GeminiSettings;
-      const args: string[] = ["-p"];
+      // Gemini: options MUST come before -p "prompt"
+      const args: string[] = [];
       if (s.model) args.push("--model", s.model);
       if (s.temperature !== undefined) args.push("--temperature", String(s.temperature));
       if (s.approvalMode) args.push("--approval-mode", s.approvalMode);
       if (s.sandboxed) args.push("--sandbox");
       if (s.outputFormat) args.push("--output-format", s.outputFormat);
       if (s.yolo) args.push("--yolo");
-      args.push(prompt);
+      args.push("-p", prompt);
       return args;
     }
   }
