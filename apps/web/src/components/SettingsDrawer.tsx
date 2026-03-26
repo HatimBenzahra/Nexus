@@ -316,11 +316,10 @@ export function SettingsDrawer({ open, onClose, activeModel, wsRef }: SettingsDr
                     value={(settings as CodexSettings).reasoningEffort}
                     options={[
                       { value: "", label: "default" },
-                      { value: "minimal", label: "minimal" },
+                      { value: "none", label: "none" },
                       { value: "low", label: "low" },
                       { value: "medium", label: "medium" },
                       { value: "high", label: "high" },
-                      { value: "xhigh", label: "xhigh" },
                     ]}
                     onChange={(v) =>
                       handleChange({

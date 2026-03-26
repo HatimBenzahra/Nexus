@@ -50,7 +50,7 @@ function buildArgs(provider: AgentType, prompt: string, cwd: string, outputFile?
       if (s.quiet) args.push("--quiet");
       if (s.json) args.push("--json");
       args.push("-C", cwd);
-      if (outputFile) args.push("-o", outputFile);
+      if (outputFile) args.push("--output-last-message", outputFile);
       args.push(prompt);
       return args;
     }

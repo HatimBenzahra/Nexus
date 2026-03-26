@@ -129,7 +129,7 @@ export interface ClaudeSettings {
 
 export interface CodexSettings {
   model?: string;
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: "none" | "low" | "medium" | "high";
   approvalMode?: "untrusted" | "on-request" | "never";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   fullAuto?: boolean;
