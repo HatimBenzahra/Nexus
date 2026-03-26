@@ -93,8 +93,19 @@ export function runProvider(options: ProviderRunOptions): ProviderRunHandle {
   });
 
   proc.stderr?.on("data", (data: Buffer) => {
-    // Forward stderr for all providers — it contains auth errors, warnings, etc.
-    options.onOutput(data.toString());
+    const text = data.toString();
+    // Only forward stderr if it looks like a real error/warning, not CLI noise
+    if (
+      text.includes("Error") ||
+      text.includes("error") ||
+      text.includes("Auth") ||
+      text.includes("limit") ||
+      text.includes("denied") ||
+      text.includes("not found") ||
+      text.includes("ENOENT")
+    ) {
+      options.onOutput(text);
+    }
   });
 
   proc.on("exit", async (code) => {
